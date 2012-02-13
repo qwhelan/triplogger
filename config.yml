@@ -1,0 +1,29 @@
+---
+client_id: ""
+client_secret: ""
+access_token: ""
+redirect_uri: "http://www.example.com"
+---
+categories:
+- &Airport !Category
+  in_start: 6
+  in_stop: 8
+  out_start: 18
+  out_stop: 20
+  transit_time: 5
+venues:
+- &LAX !Venue
+  category: *Airport
+  id: 4e348445c65b2313e2840028
+- &JFK !Venue
+  category: *Airport
+  id: 43a52546f964a520532c1fe3
+trips:
+- &LAtoNYC !Trip
+  checkins:
+   - *LAX
+   - *JFK
+  checkouts:
+   - *JFK
+   - *LAX
+
