@@ -127,8 +127,8 @@ def datetime_sleep(s):
   if isinstance(s,int):
     time.sleep(float(s))
   else:
-    time.sleep(s.total_seconds())
-
+    # timedelta.total_seconds() wasn't added until 2.7
+    time.sleep(s.days*24*3600+s.seconds)
 
 if __name__ == '__main__':
   config = open('config.yml')
