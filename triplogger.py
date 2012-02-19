@@ -1,8 +1,7 @@
-import sched, time, random, yaml, foursquare
+import sched, time, yaml, foursquare
 from datetime import datetime, timedelta
 from datetime import time as dtime
-from random import *
-
+from random import randint
 
 """ A class for categorizing venue types and containing respective check-in and
     check-out times, along with the minimum time to travel from this venue to
@@ -29,27 +28,22 @@ class Venue(yaml.YAMLObject):
   def __init__(self,category=None,id=None):
     self.category = category
     self.id = id
-    self.offset = timedelta(days=0)
 
   """ Check-in at a random time in the specified interval. """
-  def getCheckinTime(self):
+  def getCheckinTime(self,offset):
     time = datetime.now()
-    if time.hour > self.category.in_stop:
-      # If it's too late to checkin, wait until tomorrow
-      self.offset += timedelta(days=1)
-      time += self.offset
+
+    time += offset
 
     time = time.replace(hour=randint(self.category.in_start,
       self.category.in_stop),minute=randint(0,59),second=randint(0,59))
 
     return time
 
-  def getCheckoutTime(self):
-    time = datetime.today() + timedelta(days=1) + self.offset
+  def getCheckoutTime(self,offset):
+    time = datetime.today() + timedelta(days=1) + offset
     time = time.replace(hour=randint(self.category.out_start,
       self.category.out_stop),minute=randint(0,59),second=randint(0,59))
-
-    self.offset = timedelta(days=0)
 
     return time
 
@@ -67,6 +61,18 @@ class Trip(yaml.YAMLObject):
     self.checkins = checkins
     self.checkouts = checkouts
 
+  # PyYAML initializes an empty object, then copies data in. We need
+  # the first checkin before computing the offset, so we calculate it
+  # prior to scheduling the trip
+  def computeOffset(self):
+    now = datetime.now()
+    if len(self.checkins) > 0:
+      if (now.hour > self.checkins[0].category.in_stop):
+        self.offset = timedelta(days=1)
+    else:
+      self.offset = timedelta(days=0)
+
+
 def trip_constructor(loader,node):
   value = loader.construct_mapping(node)
   return Trip(**value)
@@ -77,9 +83,9 @@ def schedule_trip(trip,scheduler,api):
   prior_venue = None
 
   for i in trip.checkins:
-    c = i.getCheckinTime()
+    c = i.getCheckinTime(trip.offset)
     if prior_venue:
-      if previous + prior_venue.category.transit_time > c:
+      while (previous + prior_venue.category.transit_time > c):
         c += prior_venue.category.transit_time
 
     previous = c
@@ -88,12 +94,13 @@ def schedule_trip(trip,scheduler,api):
 
   if trip.checkouts:
     for i in trip.checkouts:
-      c = i.getCheckoutTime()
+      c = i.getCheckoutTime(trip.offset)
       if prior_venue:
-        if previous + prior_venue.category.transit_time > c:
+        while (previous + prior_venue.category.transit_time > c):
           c += prior_venue.category.transit_time
 
       previous = c
+      prior_venue = i
       scheduler.enterabs(c,1,api.checkins.add,({'venueId': i.id},))
 
   # Compute the midnight after our last checkout
@@ -116,6 +123,7 @@ def schedule_trips(scheduler, trips, api):
   if len(trips) == 0:
     return scheduler
   t = trips[randint(0,len(trips)-1)]
+  t.computeOffset()
   scheduler = schedule_trip(t,scheduler,api)
   return scheduler
 
@@ -135,6 +143,7 @@ if __name__ == '__main__':
 
   yaml.add_constructor(u'!Category',category_constructor)
   yaml.add_constructor(u'!Venue',venue_constructor)
+  yaml.add_constructor(u'!Trip',trip_constructor)
 
   data = yaml.load_all(config)
   api_data = data.next()
